@@ -1,0 +1,5 @@
+nbformat>=5.9.0
+nbclient>=0.9.0
+nbconvert>=7.0.0
+jupyter_client>=8.0.0
+ipykernel>=6.0.0

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Звіт оцінювання — sample_student.ipynb</title>
+    <title>Звіт CS-33 — sample_student.ipynb</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
@@ -14,7 +14,7 @@
             padding: 2rem;
         }
         .container {
-            max-width: 960px;
+            max-width: 1000px;
             margin: 0 auto;
             background: #fff;
             border-radius: 12px;
@@ -26,36 +26,97 @@
             color: #fff;
             padding: 2rem;
         }
-        .header h1 { font-size: 1.6rem; margin-bottom: 0.5rem; }
-        .header .filename { opacity: 0.85; font-size: 1rem; }
+        .header h1 { font-size: 1.6rem; margin-bottom: 0.25rem; }
+        .header .subtitle { opacity: 0.85; font-size: 0.95rem; }
+        .header .filename { opacity: 0.75; font-size: 0.9rem; margin-top: 0.5rem; }
         .summary {
             display: flex;
-            gap: 2rem;
+            gap: 1.5rem;
             padding: 1.5rem 2rem;
             border-bottom: 1px solid #e8e8e8;
             flex-wrap: wrap;
         }
         .score-box {
             text-align: center;
-            padding: 1rem 2rem;
+            padding: 1rem 1.5rem;
             background: #f8f9ff;
             border-radius: 8px;
+            flex: 1;
+            min-width: 120px;
         }
         .score-box .score {
-            font-size: 2.4rem;
+            font-size: 2rem;
             font-weight: 700;
             color: #4361ee;
         }
-        .score-box .label { color: #666; font-size: 0.9rem; }
-        .content { padding: 2rem; }
-        h2 { margin-bottom: 1rem; color: #3a0ca3; }
+        .score-box .label { color: #666; font-size: 0.85rem; }
+        .warnings-box {
+            margin: 1rem 2rem;
+            padding: 1rem 1.25rem;
+            background: #fff8e1;
+            border-left: 4px solid #ffc107;
+            border-radius: 6px;
+            font-size: 0.9rem;
+        }
+        .warnings-box ul { margin: 0.5rem 0 0 1.25rem; }
+        .content { padding: 0 2rem 2rem; }
+        .part-section {
+            margin-top: 2rem;
+            padding: 1.5rem;
+            border: 1px solid #e8e8e8;
+            border-radius: 10px;
+        }
+        .part-numpy { border-top: 4px solid #4361ee; }
+        .part-keras { border-top: 4px solid #e63946; }
+        .part-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+        .part-header h2 { color: #3a0ca3; font-size: 1.2rem; }
+        .part-score {
+            font-size: 1.4rem;
+            font-weight: 700;
+            color: #4361ee;
+        }
+        .part-keras .part-score { color: #e63946; }
+        h3 { margin: 1.25rem 0 0.75rem; color: #555; font-size: 1rem; }
+        .metric-bars { margin-bottom: 1rem; }
+        .metric-bar-block { margin-bottom: 0.75rem; }
+        .metric-bar-header {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.9rem;
+            margin-bottom: 0.3rem;
+        }
+        .metric-label { font-weight: 600; }
+        .metric-value { color: #666; }
+        .metric-extra { font-size: 0.9rem; color: #555; margin-top: 0.5rem; }
+        .metric-missing { color: #999; font-style: italic; font-size: 0.9rem; }
+        .progress-track, .part-progress-track {
+            height: 10px;
+            background: #e9ecef;
+            border-radius: 5px;
+            overflow: hidden;
+        }
+        .part-progress-track { margin-bottom: 1rem; height: 6px; }
+        .progress-fill {
+            height: 100%;
+            border-radius: 5px;
+            transition: width 0.4s ease;
+        }
+        .progress-fill.good { background: linear-gradient(90deg, #2ecc71, #27ae60); }
+        .progress-fill.warn { background: linear-gradient(90deg, #f39c12, #e67e22); }
+        .progress-fill.bad  { background: linear-gradient(90deg, #e74c3c, #c0392b); }
         table {
             width: 100%;
             border-collapse: collapse;
-            font-size: 0.95rem;
+            font-size: 0.9rem;
+            margin-bottom: 1rem;
         }
         th, td {
-            padding: 0.75rem 1rem;
+            padding: 0.65rem 0.85rem;
             text-align: left;
             border-bottom: 1px solid #eee;
             vertical-align: top;
@@ -65,28 +126,29 @@
             font-weight: 600;
             color: #3a0ca3;
         }
-        tr.passed td:first-child { border-left: 4px solid #2ecc71; }
-        tr.failed td:first-child { border-left: 4px solid #e74c3c; }
+        tr.passed td:first-child { border-left: 3px solid #2ecc71; }
+        tr.failed td:first-child { border-left: 3px solid #e74c3c; }
+        tr.penalty td:first-child { border-left: 3px solid #ffc107; }
         .badge {
             display: inline-block;
-            padding: 0.2rem 0.7rem;
+            padding: 0.15rem 0.6rem;
             border-radius: 20px;
-            font-size: 0.85rem;
+            font-size: 0.8rem;
             font-weight: 600;
         }
-        .badge.passed { background: #d4edda; color: #155724; }
-        .badge.failed { background: #f8d7da; color: #721c24; }
+        .badge.passed  { background: #d4edda; color: #155724; }
+        .badge.failed  { background: #f8d7da; color: #721c24; }
+        .badge.penalty { background: #fff3cd; color: #856404; }
         .error-text {
             background: #fff5f5;
             border: 1px solid #fed7d7;
             border-radius: 6px;
-            padding: 0.5rem 0.75rem;
-            font-size: 0.82rem;
+            padding: 0.4rem 0.6rem;
+            font-size: 0.78rem;
             white-space: pre-wrap;
             word-break: break-word;
-            max-height: 200px;
+            max-height: 150px;
             overflow-y: auto;
-            margin-top: 0.25rem;
         }
         .footer {
             padding: 1rem 2rem;
@@ -101,62 +163,163 @@
     <div class="container">
         <div class="header">
             <h1>Звіт автоматичного оцінювання</h1>
+            <p class="subtitle">Lab CS-33: NumPy Класифікація + Keras Регресія</p>
             <p class="filename">Файл: sample_student.ipynb</p>
         </div>
 
         <div class="summary">
             <div class="score-box">
-                <div class="score">2 / 2</div>
+                <div class="score">2.0 / 10</div>
                 <div class="label">Загальний бал</div>
             </div>
             <div class="score-box">
-                <div class="score">100%</div>
-                <div class="label">Відсоток виконання</div>
+                <div class="score">20%</div>
+                <div class="label">Виконання</div>
             </div>
             <div class="score-box">
-                <div class="score">2</div>
-                <div class="label">Тестів пройдено</div>
+                <div class="score">2.0</div>
+                <div class="label">Частина 1 (NumPy)</div>
+            </div>
+            <div class="score-box">
+                <div class="score">0.0</div>
+                <div class="label">Частина 2 (Keras)</div>
+            </div>
+            <div class="score-box">
+                <div class="score">2/2</div>
+                <div class="label">Assert-тестів</div>
             </div>
         </div>
 
+        
+        <div class="warnings-box">
+            <strong>⚠ Попередження:</strong>
+            <ul><li>У ноутбуці не знайдено згадки про датасет &#x27;cirrhosis.csv&#x27;. Переконайтесь, що студент завантажує правильний файл.</li><li>У ноутбуці не знайдено згадки про датасет &#x27;insurance.csv&#x27;. Переконайтесь, що студент завантажує правильний файл.</li></ul>
+        </div>
+        
+
         <div class="content">
-            <h2>Деталізація по тестах</h2>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Тест</th>
-                        <th>Комірка</th>
-                        <th>Статус</th>
-                        <th>Бали</th>
-                        <th>Помилка</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    
-            <tr class="passed">
-                <td>Тест #1</td>
-                <td>Комірка 2</td>
-                <td><span class="badge passed">Пройдено</span></td>
-                <td>1 / 1</td>
-                <td></td>
-            </tr>
             
-
-            <tr class="passed">
-                <td>Тест #2</td>
-                <td>Комірка 4</td>
-                <td><span class="badge passed">Пройдено</span></td>
-                <td>1 / 1</td>
-                <td></td>
-            </tr>
-            
-                </tbody>
-            </table>
+    <section class="part-section part-numpy">
+        <div class="part-header">
+            <h2>Частина 1: NumPy Класифікація (Цироз)</h2>
+            <div class="part-score">2.0 / 5 б.</div>
         </div>
 
-        <div class="footer">
-            Згенеровано: 2026-07-14 21:43:54
+        <div class="metric-bars"><p class="metric-missing">Метрику не виявлено</p></div>
+
+        <div class="part-progress-track">
+            <div class="progress-fill warn"
+                 style="width: 40.0%"></div>
         </div>
+
+        <h3>Критерії оцінювання</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Критерій</th><th>Значення</th><th>Статус</th>
+                    <th>Бали</th><th>Коментар</th>
+                </tr>
+            </thead>
+            <tbody>
+        <tr class="failed">
+            <td>Test Accuracy</td>
+            <td>—</td>
+            <td><span class="badge failed">Ні</span></td>
+            <td>0.0 / 3</td>
+            <td>Test accuracy не знайдено у виводах ноутбука</td>
+        </tr>
+        
+
+        <tr class="passed">
+            <td>Forward / Backprop</td>
+            <td>—</td>
+            <td><span class="badge passed">Так</span></td>
+            <td>2.0 / 2</td>
+            <td>Пройдено 2/2 assert-тестів</td>
+        </tr>
+        </tbody>
+        </table>
+
+        
+    <h3>Assert-тести</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>Тест</th><th>Комірка</th><th>Критерій</th>
+                <th>Статус</th><th>Бали</th><th>Помилка</th>
+            </tr>
+        </thead>
+        <tbody>
+        <tr class="passed">
+            <td>Тест #1</td>
+            <td>Комірка 2</td>
+            <td>forward/backprop / матричні операції</td>
+            <td><span class="badge passed">Пройдено</span></td>
+            <td>1 / 1</td>
+            <td></td>
+        </tr>
+        
+        <tr class="passed">
+            <td>Тест #2</td>
+            <td>Комірка 4</td>
+            <td>forward/backprop / матричні операції</td>
+            <td><span class="badge passed">Пройдено</span></td>
+            <td>1 / 1</td>
+            <td></td>
+        </tr>
+        </tbody>
+    </table>
+    
+    </section>
+    
+            
+    <section class="part-section part-keras">
+        <div class="part-header">
+            <h2>Частина 2: Keras Регресія (Медичні витрати)</h2>
+            <div class="part-score">0.0 / 5 б.</div>
+        </div>
+
+        <div class="metric-bars"><p class="metric-missing">Метрику не виявлено</p></div>
+
+        <div class="part-progress-track">
+            <div class="progress-fill warn"
+                 style="width: 0.0%"></div>
+        </div>
+
+        <h3>Критерії оцінювання</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Критерій</th><th>Значення</th><th>Статус</th>
+                    <th>Бали</th><th>Коментар</th>
+                </tr>
+            </thead>
+            <tbody>
+        <tr class="failed">
+            <td>R² (test)</td>
+            <td>—</td>
+            <td><span class="badge failed">Ні</span></td>
+            <td>0.0 / 3</td>
+            <td>R² не знайдено у виводах ноутбука</td>
+        </tr>
+        
+
+        <tr class="failed">
+            <td>MAE</td>
+            <td>N/A</td>
+            <td><span class="badge failed">Ні</span></td>
+            <td>0.0 / 2</td>
+            <td>MAE не знайдено у виводах ноутбука</td>
+        </tr>
+        </tbody>
+        </table>
+
+        
+    </section>
+    
+        </div>
+
+        <div class="footer">Згенеровано: 2026-07-14 22:46:05</div>
     </div>
 </body>
 </html>

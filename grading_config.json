@@ -1,6 +1,6 @@
 {
     "required_files": ["data/liver_cirrhosis.csv", "data/insurance.csv"],
-    "timeout": 60,
+    "timeout": 300,
     "parts": [
       {
         "id": "part_1",

@@ -95,7 +95,12 @@ def main() -> int:
         notebook = load_notebook(notebook_path)
         
         # Передаємо конфіг для класифікації та динамічного пошуку тегів
-        classified = classify_cells(notebook)
+        # Передаємо конфіг для класифікації та динамічного пошуку тегів
+        classified = classify_cells(
+            notebook=notebook,
+            config_parts=config_parts,
+            required_files=required_files
+        )
 
         for warning in classified.get("validation_warnings", []):
             logger.warning(warning)

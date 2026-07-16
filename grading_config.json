@@ -1,16 +1,32 @@
 {
-    "required_files": ["data/liver_cirrhosis.csv", "data/insurance.csv"],
-    "timeout": 300,
-    "parts": [
-      {
-        "id": "part_1",
-        "name": "Частина 1: NumPy класифікація (Цироз)",
-        "tag": "test-numpy-classification"
-      },
-      {
-        "id": "part_2",
-        "name": "Частина 2: Keras регресія (Витрати)",
-        "tag": "test-keras-regression"
-      }
-    ]
-  }
+  "required_files": [
+    "data/liver_cirrhosis.csv",
+    "data/insurance.csv"
+  ],
+  "parts": [
+    {
+      "id": "task_1",
+      "name": "Завдання 1: Підготовка даних",
+      "tag": "task-1-data",
+      "max_points": 15
+    },
+    {
+      "id": "task_2",
+      "name": "Завдання 2: Власна нейромережа",
+      "tag": "task-2-ann",
+      "max_points": 25
+    },
+    {
+      "id": "task_3",
+      "name": "Завдання 3: Нейромережа Keras",
+      "tag": "task-3-keras",
+      "max_points": 25
+    },
+    {
+      "id": "task_4",
+      "name": "Завдання 4: Оформлення та висновки",
+      "tag": "task-4-conclusions",
+      "max_points": 15
+    }
+  ]
+}

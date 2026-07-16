@@ -1,139 +1,118 @@
-"""Модуль генерації універсального HTML-звіту з результатами оцінювання."""
+"""Модуль генерації універсального HTML-звіту з результатами AI-оцінювання."""
 
 import html
 import logging
 from datetime import datetime
 from pathlib import Path
-
-from grader import GradingResult, PartResult, TestResult
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 
-def _render_test_rows(tests: list[TestResult]) -> str:
-    """Формує рядки таблиці для виконаних тестів конкретної частини."""
-    if not tests:
-        return '<tr><td colspan="5" style="text-align: center; color: #999;">Тести для цієї частини не запускалися або відсутні</td></tr>'
+def _render_task_section(task_id: str, task_data: dict[str, Any]) -> str:
+    """Динамічно генерує HTML-секцію для одного завдання на основі оцінки LLM."""
+    name = html.escape(task_data["name"])
+    score = task_data["score"]
+    max_points = task_data["max_points"]
+    details = task_data["details"]  # Словник з результатами від Pydantic
+    images = task_data["images"]
 
-    rows = []
-    for t in tests:
-        status_class = "passed" if t.passed else "failed"
-        status_text = "Пройдено" if t.passed else "Не пройдено"
-        error_block = ""
-        
-        if t.error_message:
-            error_block = f'<pre class="error-text">{html.escape(t.error_message)}</pre>'
-
-        rows.append(f"""
-        <tr class="{status_class}">
-            <td>Тест #{t.test_number}</td>
-            <td>Комірка {t.test_index}</td>
-            <td><span class="badge {status_class}">{status_text}</span></td>
-            <td>{t.points:.0f} / {t.max_points:.0f}</td>
-            <td>{error_block}</td>
-        </tr>
-        """)
-
-    return "".join(rows)
-
-
-def _render_part_section(part: PartResult) -> str:
-    """Динамічно генерує HTML-секцію для однієї частини роботи."""
-    test_rows = _render_test_rows(part.test_results)
-    
     # Розрахунок відсотка виконання для прогрес-бару секції
-    part_pct = (part.score / part.max_score * 100) if part.max_score > 0 else 0.0
+    part_pct = (score / max_points * 100) if max_points > 0 else 0.0
     bar_class = "good" if part_pct >= 80 else ("warn" if part_pct >= 50 else "bad")
+
+    # Форматуємо розбивку балів
+    breakdown_html = f"""
+    <div class="score-breakdown">
+        <div class="breakdown-item"><strong>Код:</strong> {details.get('code_score', 0)} б.</div>
+        <div class="breakdown-item"><strong>Текст:</strong> {details.get('text_score', 0)} б.</div>
+        <div class="breakdown-item"><strong>Графіки:</strong> {details.get('graphs_score', 0)} б.</div>
+        <div class="breakdown-item bonus"><strong>Бонус:</strong> +{details.get('bonus_score', 0)} б.</div>
+    </div>
+    """
+
+    # Форматуємо відгук ШІ
+    feedback_text = html.escape(details.get('feedback', 'Коментар відсутній.'))
+    feedback_html = f"""
+    <div class="ai-feedback">
+        <div class="feedback-title">🤖 Коментар AI-асистента:</div>
+        <div class="feedback-text">{feedback_text}</div>
+    </div>
+    """
+
+    # Форматуємо галерею зображень, якщо вони є
+    images_html = ""
+    if images:
+        img_tags = []
+        for img in images:
+            mime = html.escape(img.get("mime_type", "image/png"))
+            b64 = img.get("base64_data", "")
+            img_tags.append(f'<img src="data:{mime};base64,{b64}" alt="Графік з ноутбука" class="preview-img">')
+        
+        images_html = f"""
+        <div class="image-gallery">
+            <div class="gallery-title">📊 Знайдені графіки:</div>
+            <div class="gallery-container">{"".join(img_tags)}</div>
+        </div>
+        """
 
     return f"""
     <section class="part-section">
         <div class="part-header">
-            <h2>{html.escape(part.title)}</h2>
-            <div class="part-score">{part.score:.1f} / {part.max_score:.0f} б.</div>
+            <h2>{name}</h2>
+            <div class="part-score">{score} / {max_points} б.</div>
         </div>
 
         <div class="part-progress-track">
             <div class="progress-fill {bar_class}" style="width: {min(part_pct, 100.0):.1f}%"></div>
         </div>
-
-        <table>
-            <thead>
-                <tr>
-                    <th style="width: 15%;">Тест</th>
-                    <th style="width: 15%;">Комірка</th>
-                    <th style="width: 15%;">Статус</th>
-                    <th style="width: 15%;">Бали</th>
-                    <th style="width: 40%;">Помилка / Деталі</th>
-                </tr>
-            </thead>
-            <tbody>
-                {test_rows}
-            </tbody>
-        </table>
+        
+        {breakdown_html}
+        {feedback_html}
+        {images_html}
     </section>
     """
 
 
 def generate_html_report(
     notebook_filename: str,
-    grading_result: GradingResult,
+    evaluation_results: dict[str, dict[str, Any]],
+    total_score: int,
+    max_total_score: int
 ) -> str:
     """
-    Створює універсальний HTML-звіт на основі динамічних результатів оцінювання.
-
-    Args:
-        notebook_filename: Ім'я файлу студентської роботи.
-        grading_result: Результат оцінювання Grader.grade().
-
-    Returns:
-        HTML-документ як рядок.
+    Створює HTML-звіт на основі результатів AI-оцінювання.
     """
-    total = grading_result.total_score
-    maximum = grading_result.max_score
-    percentage = (total / maximum * 100) if maximum > 0 else 0.0
+    percentage = (total_score / max_total_score * 100) if max_total_score > 0 else 0.0
 
     safe_filename = html.escape(notebook_filename)
     generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    # 1. Рендеринг попереджень про файли чи датасети
-    warnings_html = ""
-    if grading_result.validation_warnings:
-        items = "".join(
-            f"<li>{html.escape(w)}</li>"
-            for w in grading_result.validation_warnings
-        )
-        warnings_html = f"""
-        <div class="warnings-box">
-            <strong>⚠ Попередження:</strong>
-            <ul>{items}</ul>
-        </div>
-        """
-
-    # 2. Динамічний рендеринг карток підсумків (Summary Cards) для кожної частини
+    # Динамічний рендеринг карток підсумків (Summary Cards)
     parts_summary_html = []
-    for part_id, part in grading_result.parts_results.items():
+    for task_id, task_data in evaluation_results.items():
         parts_summary_html.append(f"""
         <div class="score-box">
-            <div class="score">{part.score:.1f} / {part.max_score:.0f}</div>
-            <div class="label">{html.escape(part.title)}</div>
+            <div class="score">{task_data['score']} / {task_data['max_points']}</div>
+            <div class="label">{html.escape(task_data['name'])}</div>
         </div>
         """)
     
     parts_cards = "\n".join(parts_summary_html)
 
-    # 3. Динамічний рендеринг секцій з таблицями тестів
+    # Динамічний рендеринг секцій завдань
     sections_list = []
-    for part_id, part in grading_result.parts_results.items():
-        sections_list.append(_render_part_section(part))
+    for task_id, task_data in evaluation_results.items():
+        sections_list.append(_render_task_section(task_id, task_data))
     
-    content_html = "\n".join(sections_list) if sections_list else "<p style='text-align:center; padding: 2rem; color: #666;'>Не виявлено жодної частини для оцінювання.</p>"
+    content_html = "\n".join(sections_list) if sections_list else "<p style='text-align:center; padding: 2rem; color: #666;'>Немає даних для відображення.</p>"
 
     report_html = f"""<!DOCTYPE html>
 <html lang="uk">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Звіт автоматичного оцінювання — {safe_filename}</title>
+    <title>AI-Звіт оцінювання — {safe_filename}</title>
     <style>
         * {{ box-sizing: border-box; margin: 0; padding: 0; }}
         body {{
@@ -174,6 +153,7 @@ def generate_html_report(
             border-radius: 8px;
             flex: 1;
             min-width: 140px;
+            border: 1px solid #e2e8f0;
         }}
         .score-box .score {{
             font-size: 1.8rem;
@@ -181,16 +161,6 @@ def generate_html_report(
             color: #4361ee;
         }}
         .score-box .label {{ color: #666; font-size: 0.8rem; margin-top: 0.25rem; }}
-        
-        .warnings-box {{
-            margin: 1.5rem 2rem 0;
-            padding: 1rem 1.25rem;
-            background: #fff8e1;
-            border-left: 4px solid #ffc107;
-            border-radius: 6px;
-            font-size: 0.9rem;
-        }}
-        .warnings-box ul {{ margin: 0.5rem 0 0 1.25rem; }}
         
         .content {{ padding: 1rem 2rem 2rem; }}
         
@@ -200,6 +170,7 @@ def generate_html_report(
             border: 1px solid #e8e8e8;
             border-radius: 10px;
             border-top: 4px solid #4361ee;
+            background: #fafafc;
         }}
         .part-header {{
             display: flex;
@@ -230,48 +201,71 @@ def generate_html_report(
         .progress-fill.warn {{ background: linear-gradient(90deg, #f39c12, #e67e22); }}
         .progress-fill.bad  {{ background: linear-gradient(90deg, #e74c3c, #c0392b); }}
         
-        table {{
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 0.9rem;
-            margin-bottom: 1rem;
+        .score-breakdown {{
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+            flex-wrap: wrap;
         }}
-        th, td {{
-            padding: 0.75rem 0.85rem;
-            text-align: left;
-            border-bottom: 1px solid #eee;
-            vertical-align: top;
-        }}
-        th {{
-            background: #f8f9ff;
-            font-weight: 600;
-            color: #3a0ca3;
-        }}
-        tr.passed td:first-child {{ border-left: 3px solid #2ecc71; }}
-        tr.failed td:first-child {{ border-left: 3px solid #e74c3c; }}
-        
-        .badge {{
-            display: inline-block;
-            padding: 0.15rem 0.6rem;
-            border-radius: 20px;
-            font-size: 0.8rem;
-            font-weight: 600;
-        }}
-        .badge.passed  {{ background: #d4edda; color: #155724; }}
-        .badge.failed  {{ background: #f8d7da; color: #721c24; }}
-        
-        .error-text {{
-            background: #fff5f5;
-            border: 1px solid #fed7d7;
+        .breakdown-item {{
+            background: #fff;
+            padding: 0.5rem 1rem;
             border-radius: 6px;
-            padding: 0.5rem 0.75rem;
-            font-size: 0.78rem;
-            font-family: Consolas, "Courier New", monospace;
-            white-space: pre-wrap;
-            word-break: break-word;
-            max-height: 200px;
-            overflow-y: auto;
+            border: 1px solid #e2e8f0;
+            font-size: 0.9rem;
+            color: #4a5568;
         }}
+        .breakdown-item.bonus {{
+            background: #f0fff4;
+            border-color: #9ae6b4;
+            color: #276749;
+        }}
+        
+        .ai-feedback {{
+            background: #fff;
+            border-left: 4px solid #805ad5;
+            padding: 1.25rem;
+            border-radius: 6px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            margin-bottom: 1.5rem;
+        }}
+        .feedback-title {{
+            font-weight: 700;
+            color: #553c9a;
+            margin-bottom: 0.5rem;
+            font-size: 0.95rem;
+        }}
+        .feedback-text {{
+            font-size: 0.95rem;
+            color: #2d3748;
+            white-space: pre-wrap; /* Зберігає абзаци */
+        }}
+
+        .image-gallery {{
+            background: #fff;
+            padding: 1rem;
+            border-radius: 6px;
+            border: 1px solid #e2e8f0;
+        }}
+        .gallery-title {{
+            font-weight: 600;
+            color: #4a5568;
+            margin-bottom: 0.75rem;
+            font-size: 0.9rem;
+        }}
+        .gallery-container {{
+            display: flex;
+            gap: 1rem;
+            overflow-x: auto;
+            padding-bottom: 0.5rem;
+        }}
+        .preview-img {{
+            max-height: 250px;
+            border: 1px solid #cbd5e0;
+            border-radius: 4px;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+        }}
+        
         .footer {{
             padding: 1rem 2rem;
             background: #f8f9ff;
@@ -284,14 +278,14 @@ def generate_html_report(
 <body>
     <div class="container">
         <div class="header">
-            <h1>Звіт автоматичного оцінювання</h1>
-            <p class="subtitle">Універсальна система перевірки лабораторних робіт Jupyter</p>
+            <h1>AI-Звіт оцінювання</h1>
+            <p class="subtitle">Перевірка виконана за допомогою LangChain та LLM</p>
             <p class="filename">Файл: {safe_filename}</p>
         </div>
 
         <div class="summary">
             <div class="score-box">
-                <div class="score">{total:.1f} / {maximum:.0f}</div>
+                <div class="score">{total_score} / {max_total_score}</div>
                 <div class="label">Загальний бал</div>
             </div>
             <div class="score-box">
@@ -300,8 +294,6 @@ def generate_html_report(
             </div>
             {parts_cards}
         </div>
-
-        {warnings_html}
 
         <div class="content">
             {content_html}

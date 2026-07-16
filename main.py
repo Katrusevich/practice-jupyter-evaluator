@@ -1,5 +1,5 @@
 """
-Універсальна точка входу для автоматичного оцінювання Jupyter Notebook.
+Головний пайплайн AI-оцінювання Jupyter Notebook.
 
 Використання:
     python main.py path/to/student_notebook.ipynb
@@ -11,10 +11,11 @@ import logging
 import sys
 from pathlib import Path
 from typing import Any
+import time
 
-from executor import NotebookExecutor
-from grader import Grader
-from parser import classify_cells, load_notebook
+# Імпортуємо наші нові модулі
+from parser import load_notebook, extract_task_data
+from llm_evaluator import LLMEvaluator
 from reporter import generate_html_report, save_report
 
 logger = logging.getLogger("main")
@@ -32,135 +33,108 @@ def setup_logging(verbose: bool = False) -> None:
 
 def parse_args() -> argparse.Namespace:
     """Парсить аргументи командного рядка."""
-    parser = argparse.ArgumentParser(
-        description="Автоматичне універсальне оцінювання Jupyter Notebook",
-    )
-    parser.add_argument(
-        "notebook_path",
-        help="Шлях до файлу .ipynb студента",
-    )
-    parser.add_argument(
-        "-v", "--verbose",
-        action="store_true",
-        help="Детальне логування (DEBUG)",
-    )
+    parser = argparse.ArgumentParser(description="AI-оцінювання Jupyter Notebook")
+    parser.add_argument("notebook_path", help="Шлях до файлу .ipynb")
+    parser.add_argument("-v", "--verbose", action="store_true", help="Детальне логування")
     return parser.parse_args()
 
 
 def load_grading_config() -> dict[str, Any]:
-    """
-    Зчитує конфігураційний файл grading_config.json.
-    Якщо файлу немає, повертає базовий дефолтний конфіг.
-    """
+    """Зчитує оновлений конфігураційний файл grading_config.json."""
     config_path = Path("grading_config.json")
     if config_path.exists():
-        try:
-            with open(config_path, "r", encoding="utf-8") as f:
-                config = json.load(f)
-                logger.info("Конфігурацію успішно завантажено з %s", config_path.name)
-                return config
-        except Exception as exc:
-            logger.warning("Помилка читання конфігурації (%s). Використовуємо дефолтні налаштування.", exc)
+        with open(config_path, "r", encoding="utf-8") as f:
+            return json.load(f)
     
-    # Резервний дефолтний конфіг, якщо файлу немає
-    return {
-        "required_files": [],
-        "timeout": 30,
-        "parts": [
-            {
-                "id": "part_1",
-                "name": "Частина 1 (Тести)",
-                "tag": "autograder-test"
-            }
-        ]
-    }
+    logger.error("Файл grading_config.json не знайдено! Він обов'язковий для AI-оцінювання.")
+    sys.exit(1)
 
 
 def main() -> int:
-    """Головний пайплайн: parse → execute → grade → report."""
+    """Головний пайплайн: parse → LLM evaluate → report."""
     args = parse_args()
     setup_logging(verbose=args.verbose)
-
     notebook_path = Path(args.notebook_path)
     
-    # 0. Завантажуємо налаштування
+    logger.info("=== Запуск AI-грейдера для %s ===", notebook_path.name)
+
+    # 0. Завантажуємо налаштування завдань
     config = load_grading_config()
-    required_files = config.get("required_files", [])
-    timeout = config.get("timeout", 30)
     config_parts = config.get("parts", [])
 
     try:
-        # 1. Парсинг та валідація структури
-        logger.info("=== Крок 1: Парсинг та валідація ноутбука ===")
+        # 1. Парсинг та збір даних (код, текст, картинки)
+        logger.info("=== Крок 1: Парсинг ноутбука ===")
         notebook = load_notebook(notebook_path)
+        extracted_data = extract_task_data(notebook, config_parts)
+
+        # 2. Оцінювання через LLM
+        logger.info("=== Крок 2: AI-оцінювання ===")
+        # Підключаємо ШІ (вимагає наявності файлів rubric.md та .env з OPENAI_API_KEY)
+        evaluator = LLMEvaluator(rubric_path="rubric.md")
         
-        # Передаємо конфіг для класифікації та динамічного пошуку тегів
-        # Передаємо конфіг для класифікації та динамічного пошуку тегів
-        classified = classify_cells(
-            notebook=notebook,
-            config_parts=config_parts,
-            required_files=required_files
-        )
+        evaluation_results = {}
+        total_score = 0
+        max_total_score = 0
 
-        for warning in classified.get("validation_warnings", []):
-            logger.warning(warning)
+        for part in config_parts:
+            task_id = part["id"]
+            task_name = part["name"]
+            tag = part["tag"]
+            max_points = part["max_points"]
+            
+            max_total_score += max_points
+            
+            # Беремо дані для конкретного тегу. Якщо студент не поставив тег — віддаємо порожні дані
+            task_data = extracted_data.get(tag, {"text": "", "code": "", "images": []})
+            
+            # Запитуємо оцінку в нейромережі
+            result = evaluator.evaluate_task(task_name, max_points, task_data)
+            time.sleep(20)
+            
+            if result:
+                task_score = result.code_score + result.text_score + result.graphs_score + result.bonus_score
+                total_score += task_score
+                
+                # Зберігаємо результат для HTML-звіту
+                evaluation_results[task_id] = {
+                    "name": task_name,
+                    "max_points": max_points,
+                    "score": task_score,
+                    "details": result.model_dump(),  # Перетворюємо Pydantic-об'єкт у словник
+                    "images": task_data["images"]    # Зберігаємо картинки, щоб вивести їх у звіті
+                }
+            else:
+                logger.error("Не вдалося оцінити завдання: %s", task_name)
 
-        if not classified["test_cells"]:
-            logger.warning("У ноутбуці не знайдено тестових комірок")
-
-        # 2. Виконання у ізольованому ядрі з таймаутом з конфігурації
-        logger.info("=== Крок 2: Виконання ноутбука ===")
-        executor = NotebookExecutor(timeout=timeout)
-        executed_notebook = executor.execute(notebook)
-
-        if executor.cell_errors:
-            for cell_idx, error in executor.cell_errors.items():
-                logger.warning(
-                    "Помилка у комірці %d (виконання продовжено): %s",
-                    cell_idx,
-                    error.split("\n")[0],
-                )
-
-        # 3. Універсальне оцінювання за assert-тестами та частинами
-        logger.info("=== Крок 3: Оцінювання ===")
-        grader = Grader(
-            classified_test_cells=classified["test_cells"],
-            config_parts=config_parts,
-            validation_warnings=classified.get("validation_warnings", []),
-        )
-        grading_result = grader.grade(executed_notebook)
-
-        # 4. HTML-звіт у поточну папку
-        logger.info("=== Крок 4: Формування звіту ===")
+        # 3. Генерація HTML-звіту
+        logger.info("=== Крок 3: Формування звіту ===")
+        # Передаємо нові структури даних до репортера
         html_report = generate_html_report(
             notebook_filename=notebook_path.name,
-            grading_result=grading_result,
+            evaluation_results=evaluation_results,
+            total_score=total_score,
+            max_total_score=max_total_score
         )
 
         report_filename = f"report_{notebook_path.stem}.html"
         report_path = Path.cwd() / report_filename
         save_report(html_report, report_path)
 
-        # Універсальний динамічний підсумок у консоль
-        print(f"\n{'=' * 55}")
+        # 4. Підсумок у консоль
+        print(f"\n{'=' * 65}")
         print(f"Файл:     {notebook_path.name}")
-        print(f"Загалом:  {grading_result.total_score:.1f} / {grading_result.max_score:.0f} б.")
+        print(f"Загалом:  {total_score} / {max_total_score} б.")
+        print("-" * 65)
         
-        # Виводимо результати по кожній частині динамічно
-        for part_id, part in grading_result.parts_results.items():
-            print(f"  {part.title}:  {part.score:.1f} / {part.max_score:.0f} б.")
+        for part_id, res in evaluation_results.items():
+            print(f"  {res['name']:<40} | {res['score']} / {res['max_points']} б.")
             
-        print(f"Звіт:     {report_path.resolve()}")
-        print(f"{'=' * 55}\n")
+        print(f"\nЗвіт:     {report_path.resolve()}")
+        print(f"{'=' * 65}\n")
 
         return 0
 
-    except FileNotFoundError:
-        logger.error("Файл не знайдено: %s", notebook_path)
-        return 1
-    except ValueError as exc:
-        logger.error("Помилка формату ноутбука: %s", exc)
-        return 1
     except Exception as exc:
         logger.exception("Непередбачена помилка: %s", exc)
         return 1

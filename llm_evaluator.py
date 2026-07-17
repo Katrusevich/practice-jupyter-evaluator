@@ -134,6 +134,7 @@ class LLMEvaluator:
             result: TaskEvaluation = self.structured_llm.invoke(messages)
             
             logger.info("Успішно оцінено: %s (Сума: %d балів)", task_name, result.code_score + result.text_score + result.graphs_score)
+            print(f"DEBUG JSON Output for {task_name}: {result.model_dump_json(indent=2)}")
             return result
             
         except Exception as e:
